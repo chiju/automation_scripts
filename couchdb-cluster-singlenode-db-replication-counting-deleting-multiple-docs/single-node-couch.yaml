@@ -1,0 +1,65 @@
+---
+# tasks file for couchdb-installation
+#
+# Please copy the UUIDs and then remove UUID folder and setup_cordination_ip file from playbook home directory 
+# before creating another cluster 
+# 
+#- hosts: couchdb
+- hosts: all
+  tasks:
+  - name: Add apache-couchdb
+    yum_repository:
+      name: bintray--apache-couchdb-rpm
+      description: bintray--apache-couchdb-rpm
+      baseurl: http://apache.bintray.com/couchdb-rpm/el$releasever/$basearch/
+      gpgcheck: no
+
+  - name: Install epel-release
+    yum:
+      name: epel-release  
+      state: present
+      update_cache: yes
+
+  - name: Install couchdb
+    yum:
+      name: couchdb    
+      state: present
+      update_cache: yes
+
+  - name: Get public IP
+    ipify_facts:
+    register: public_ip
+
+  - name: Getting public IP
+    set_fact:
+      public_ip_address: "{{ public_ip['ansible_facts']['ipify_public_ip'] }}"
+
+  - debug:
+      var: public_ip_address
+
+  - name: Changing IP to public IP
+    lineinfile:
+      path: /opt/couchdb/etc/vm.args
+      regexp: '^-name couchdb@127.0.0.1'
+      line: '-name couchdb@{{ public_ip_address }}'
+      backrefs: yes
+
+  - name: Test for line
+    shell: grep 'kernel inet_dist_listen_min 9100' /opt/couchdb/etc/vm.args
+    register: test_grep
+    ignore_errors: yes
+
+  - name: Adding ports
+    lineinfile:
+      path: /opt/couchdb/etc/vm.args
+      line: "{{ item}}"
+    with_items:
+      - '-kernel inet_dist_listen_min 9100'
+      - '-kernel inet_dist_listen_max 9200'
+    when: test_grep.stdout == ""
+   
+  - name: Make sure couchdb service is service is running and enabled
+    systemd:
+      state: started
+      name: couchdb
+      enabled: yes
